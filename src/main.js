@@ -5,10 +5,16 @@ export default async ({ req, res, log, error }) => {
     return res.json({ error: "No Data Provided" }, 400);
   }
 
+  let body;
   try {
-    const body = JSON.parse(req.body);
+    body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  } catch (e) {
+    error("JSON Parse Error: " + e.message);
+    return res.json({ error: "Invalid JSON format" }, 400);
+  }
+  try {
     //extract data
-    const { startTime, endTime, baseRate, travelRate, type } = body;
+    const { startTime, endTime, baseRate, travelRate, type, user_id } = body;
     log(`Calculating shift for user: ${user_id || "annonymous"}`);
 
     // initilize result var to hold the calculation of the shift
