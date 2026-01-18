@@ -1,5 +1,5 @@
 {
-  "name": "guardpay-functions",
+  "name": "calculate-shift",
   "version": "1.0.0",
   "main": "src/main.js",
   "type": "module",
