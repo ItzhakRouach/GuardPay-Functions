@@ -1,12 +1,17 @@
 // initilize appwrite sdk
 import { Client, Databases, Query, Users } from "node-appwrite";
+import {
+  DATABASE_ID,
+  USERS_PREFS,
+  SHIFTS_HISTORY,
+  API,
+  ENDPOINT,
+  PROJECT,
+} from "./appwrite";
 
 export default async ({ req, res, log, error }) => {
   const client = new Client();
-  client
-    .setEndpoint(process.env.APPWRITE_FUNCTION_ENDPOINT)
-    .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
-    .setKey(process.env.APPWRITE_API_KEY);
+  client.setEndpoint(ENDPOINT).setProject(PROJECT).setKey(API);
 
   const databases = new Databases(client);
   const users = new Users(client);
@@ -28,16 +33,12 @@ export default async ({ req, res, log, error }) => {
   try {
     const { userId } = body;
     const [userPref, userShifts] = await Promise.all([
-      databases.listDocuments(
-        process.env.DATABASE_ID,
-        process.env.USERS_PREFS_ID,
-        [Query.equal("user_id", userId)],
-      ),
-      databases.listDocuments(
-        process.env.DATABASE_ID,
-        process.env.SHIFTS_HISTORY_ID,
-        [Query.equal("user_id", userId)],
-      ),
+      databases.listDocuments(DATABASE_ID, USERS_PREFS, [
+        Query.equal("user_id", userId),
+      ]),
+      databases.listDocuments(DATABASE_ID, SHIFTS_HISTORY, [
+        Query.equal("user_id", userId),
+      ]),
     ]);
 
     // now after fetching we delete all the records if existed
@@ -45,18 +46,10 @@ export default async ({ req, res, log, error }) => {
     // Delete user Pref records
     const deleteTasks = [
       ...userPref.documents.map((doc) =>
-        databases.deleteDocument(
-          process.env.DATABASE_ID,
-          process.env.USERS_PREFS_ID,
-          doc.$id,
-        ),
+        databases.deleteDocument(DATABASE_ID, USERS_PREFS, doc.$id),
       ),
       ...userShifts.documents.map((doc) =>
-        databases.deleteDocument(
-          process.env.DATABASE_ID,
-          process.env.SHIFTS_HISTORY_ID,
-          doc.$id,
-        ),
+        databases.deleteDocument(DATABASE_ID, SHIFTS_HISTORY, doc.$id),
       ),
     ];
 
