@@ -7,7 +7,7 @@ import {
   API,
   ENDPOINT,
   PROJECT,
-} from "./appwrite";
+} from "./appwrite.js";
 
 export default async ({ req, res, log, error }) => {
   const client = new Client();
