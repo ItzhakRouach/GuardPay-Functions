@@ -1,17 +1,13 @@
 // initilize appwrite sdk
 import { Client, Databases, Query, Users } from "node-appwrite";
-import {
-  DATABASE_ID,
-  USERS_PREFS,
-  SHIFTS_HISTORY,
-  API,
-  ENDPOINT,
-  PROJECT,
-} from "./appwrite.js";
-
 export default async ({ req, res, log, error }) => {
   const client = new Client();
-  client.setEndpoint(ENDPOINT).setProject(PROJECT).setKey(API);
+  client
+    .setEndpoint("https://fra.cloud.appwrite.io/v1")
+    .setProject("69583540003a5151db86")
+    .setKey(
+      "standard_a002d3461db36e01878442889155d73f93117af56a89806990bd8fe23a4a8f897eb54db55ac24c1017154e037862d2fc372fc4e765c20127fe8c26403f9d076939f532476f631add4f375befa84833fd38d1b0db02d0f1d48cd72d35bf0f84c77242bbdefa08ce5fc0a00afde021aeebec192ab59e8be31bfb5f8ff7f6bfcb9b",
+    );
 
   const databases = new Databases(client);
   const users = new Users(client);
@@ -33,10 +29,10 @@ export default async ({ req, res, log, error }) => {
   try {
     const { userId } = body;
     const [userPref, userShifts] = await Promise.all([
-      databases.listDocuments(DATABASE_ID, USERS_PREFS, [
+      databases.listDocuments("695835c0002144f7a605", "users_prefs", [
         Query.equal("user_id", userId),
       ]),
-      databases.listDocuments(DATABASE_ID, SHIFTS_HISTORY, [
+      databases.listDocuments("695835c0002144f7a605", "shifts_history", [
         Query.equal("user_id", userId),
       ]),
     ]);
@@ -46,10 +42,18 @@ export default async ({ req, res, log, error }) => {
     // Delete user Pref records
     const deleteTasks = [
       ...userPref.documents.map((doc) =>
-        databases.deleteDocument(DATABASE_ID, USERS_PREFS, doc.$id),
+        databases.deleteDocument(
+          "695835c0002144f7a605",
+          "users_prefs",
+          doc.$id,
+        ),
       ),
       ...userShifts.documents.map((doc) =>
-        databases.deleteDocument(DATABASE_ID, SHIFTS_HISTORY, doc.$id),
+        databases.deleteDocument(
+          "695835c0002144f7a605",
+          "shifts_history",
+          doc.$id,
+        ),
       ),
     ];
 
