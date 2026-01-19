@@ -1,0 +1,9 @@
+{
+  "name": "delete-account",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "type": "module",
+  "dependencies": {
+    "node-appwrite": "^21.1.0"
+  }
+}
