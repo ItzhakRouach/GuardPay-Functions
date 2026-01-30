@@ -1,11 +1,24 @@
+import { Client, Databases, Query, Users } from "node-appwrite";
+
 export default async ({ req, res, log, error }) => {
-  //check for data arrive
+  // 1. Initialize Client
+  const client = new Client();
+  client
+    .setEndpoint("https://fra.cloud.appwrite.io/v1")
+    .setProject("69583540003a5151db86")
+    .setKey(
+      "standard_a002d3461db36e01878442889155d73f93117af56a89806990bd8fe23a4a8f897eb54db55ac24c1017154e037862d2fc372fc4e765c20127fe8c26403f9d076939f532476f631add4f375befa84833fd38d1b0db02d0f1d48cd72d35bf0f84c77242bbdefa08ce5fc0a00afde021aeebec192ab59e8be31bfb5f8ff7f6bfcb9b",
+    );
+
+  const databases = new Databases(client);
+  const users = new Users(client);
+
+  // 2. Parse Request Body
   if (!req.body) {
     error("Request body is missing!");
     return res.json({ error: "No Data Provided" }, 400);
   }
 
-  //check for how data arive and destruct like should
   let body;
   try {
     body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
@@ -14,70 +27,120 @@ export default async ({ req, res, log, error }) => {
     return res.json({ error: "Invalid JSON format" }, 400);
   }
 
-  const { action, payload } = body;
+  // 3. Destructure Action and Payload
+  const { action, payload, userId } = body;
+  // Note: userId is top level in your delete example, but usually payload is better.
+  // I checked both to be safe.
+
   try {
-    if (action === "CALCULATE_SALARY") {
-      const {
-        regularPay,
-        extraPay,
-        travelPay,
-        training_pay = 0,
-        vacation_pay = 0,
-      } = payload;
+    switch (action) {
+      case "DELETE_ACCOUNT": {
+        const targetUserId = userId || payload?.userId;
+        if (!targetUserId) {
+          return res.json({ error: "User ID is required for deletion" }, 400);
+        }
 
-      const result = calculateSalary(
-        regularPay,
-        extraPay,
-        travelPay,
-        training_pay,
-        vacation_pay,
-      );
-      log("Salary calculate successfully");
-      return res.json(result);
-    }
+        log(`Starting deletion for user: ${targetUserId}`);
 
-    if (action === "CALCULATE_SHIFT") {
-      const { startTime, endTime, baseRate, travelRate, type, user_id } =
-        payload;
-      log(`Calculating shift for user: ${user_id || "annonymous"}`);
+        const [userPref, userShifts] = await Promise.all([
+          databases.listDocuments("695835c0002144f7a605", "users_prefs", [
+            Query.equal("user_id", targetUserId),
+          ]),
+          databases.listDocuments("695835c0002144f7a605", "shifts_history", [
+            Query.equal("user_id", targetUserId),
+          ]),
+        ]);
 
-      // initilize result var to hold the calculation of the shift
-      let result;
+        const deleteTasks = [
+          ...userPref.documents.map((doc) =>
+            databases.deleteDocument(
+              "695835c0002144f7a605",
+              "users_prefs",
+              doc.$id,
+            ),
+          ),
+          ...userShifts.documents.map((doc) =>
+            databases.deleteDocument(
+              "695835c0002144f7a605",
+              "shifts_history",
+              doc.$id,
+            ),
+          ),
+        ];
 
-      if (type === "training" || type === "vacation") {
-        result = {
-          total_amount: Number(baseRate * 8),
-          reg_hours: 0,
-          extra_hours: 0,
-          reg_pay_amount: 0,
-          extra_pay_amount: 0,
-          travel_pay_amount: type === "training" ? Number(travelRate) : 0,
-          h100_hours: 0,
-          h125_extra_hours: 0,
-          h150_extra_hours: 0,
-          h175_extra_hours: 0,
-          h200_extra_hours: 0,
-          h150_shabat: 0,
-          base_rate: baseRate,
-          is_training: type === "training",
-          is_vacation: type === "vacation",
-          start_time: startTime,
-          end_time: endTime,
-        };
-      } else {
-        result = calculateShiftPay(startTime, endTime, baseRate, travelRate);
-        result.is_training = false;
-        result.is_vacation = false;
-        result.start_time = startTime;
-        result.end_time = endTime;
-        result.base_rate = Number(baseRate);
+        await Promise.all(deleteTasks);
+        log("Documents deleted successfully.");
+
+        await users.delete(targetUserId);
+        log("User account deleted successfully.");
+        return res.json({ message: "All data deleted successfully" });
       }
-      log("Shift calculate successfully");
-      // return the result to the user
-      return res.json(result);
+
+      case "CALCULATE_SALARY": {
+        const {
+          regularPay,
+          extraPay,
+          travelPay,
+          training_pay = 0,
+          vacation_pay = 0,
+        } = payload;
+
+        const result = calculateSalary(
+          regularPay,
+          extraPay,
+          travelPay,
+          training_pay,
+          vacation_pay,
+        );
+        log("Salary calculated successfully");
+        return res.json(result);
+      }
+
+      case "CALCULATE_SHIFT": {
+        const { startTime, endTime, baseRate, travelRate, type, user_id } =
+          payload;
+
+        log(`Calculating shift for user: ${user_id || "anonymous"}`);
+
+        let result;
+
+        if (type === "training" || type === "vacation") {
+          result = {
+            total_amount: Number(baseRate * 8),
+            reg_hours: 0,
+            extra_hours: 0,
+            reg_pay_amount: 0,
+            extra_pay_amount: 0,
+            travel_pay_amount: type === "training" ? Number(travelRate) : 0,
+            h100_hours: 0,
+            h125_extra_hours: 0,
+            h150_extra_hours: 0,
+            h175_extra_hours: 0,
+            h200_extra_hours: 0,
+            h150_shabat: 0,
+            base_rate: baseRate,
+            is_training: type === "training",
+            is_vacation: type === "vacation",
+            start_time: startTime,
+            end_time: endTime,
+          };
+        } else {
+          result = calculateShiftPay(startTime, endTime, baseRate, travelRate);
+          result.is_training = false;
+          result.is_vacation = false;
+          result.start_time = startTime;
+          result.end_time = endTime;
+          result.base_rate = Number(baseRate);
+        }
+        log("Shift calculated successfully");
+        return res.json(result);
+      }
+
+      default:
+        return res.json({ error: "Invalid Action" }, 400);
     }
-  } catch (e) {
-    error("Calculation error: " + err.message);
+  } catch (err) {
+    error("Error happened: " + err.message);
     return res.json(
       { error: "Internal Server Error", details: err.message },
       500,
@@ -85,20 +148,25 @@ export default async ({ req, res, log, error }) => {
   }
 };
 
-// Calculate Monthly Salary of User
+// --- Helper Functions ---
+
 const calculateSalary = (
-  regularPay,
-  extraPay,
-  travelPay,
+  regularPay = 0,
+  extraPay = 0,
+  travelPay = 0,
   training_pay = 0,
   vacation_pay = 0,
 ) => {
-  const bruto = regularPay + extraPay + travelPay + training_pay + vacation_pay;
+  const reg = Number(regularPay);
+  const extra = Number(extraPay);
+  const travel = Number(travelPay);
+  const training = Number(training_pay);
+  const vacation = Number(vacation_pay);
 
-  // --- 1. Pensia calculation 7% regulat hours , 7% extra hours 5% travel  ---
-  const pensia = regularPay * 0.07 + extraPay * 0.07 + travelPay * 0.05;
+  const bruto = reg + extra + travel + training + vacation;
 
-  // --- 2. Bituah Leumi & Health (Split Rate) ---
+  const pensia = reg * 0.07 + extra * 0.07 + travel * 0.05;
+
   const thresholdBL = 7522;
   let bituahLeumiAndHealth = 0;
 
@@ -108,7 +176,6 @@ const calculateSalary = (
     bituahLeumiAndHealth = thresholdBL * 0.035 + (bruto - thresholdBL) * 0.12;
   }
 
-  // --- 3. Income Tax ---
   let grossTax = 0;
   if (bruto <= 7010) {
     grossTax = bruto * 0.1;
@@ -120,12 +187,10 @@ const calculateSalary = (
     grossTax = 710 + 427 + 1218 + (bruto - 16150) * 0.31;
   }
 
-  // --- 4. Tax Credit Points (Nekudot Zichuy) ---
   const points = 2.25;
   const creditValue = points * 242;
   const finalIncomeTax = Math.max(0, grossTax - creditValue);
 
-  // --- 5. Final Neto ---
   const totalDeductions = pensia + bituahLeumiAndHealth + finalIncomeTax;
   const neto = bruto - totalDeductions;
 
@@ -139,7 +204,6 @@ const calculateSalary = (
   };
 };
 
-// Calculate User shift
 const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
   const start = new Date(startTime);
   let end = new Date(endTime);
@@ -198,7 +262,6 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
           (blockTime.getDay() === 0 && blockTime.getHours() < 4));
 
       if (currentHour < regLimit) {
-        // Regulars Hours
         if (isWeekendBlock) {
           h150s += step;
           rPay += step * (base * 1.5);
@@ -208,7 +271,6 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
         }
         rHours += step;
       } else if (currentHour < regLimit + 2) {
-        // First Two extra hours
         if (isWeekendBlock) {
           h175s += step;
           ePay += step * (base * 1.75);
@@ -218,7 +280,6 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
         }
         eHours += step;
       } else {
-        // Third extra hours and so on
         if (isWeekendBlock) {
           h200s += step;
           ePay += step * (base * 2.0);
@@ -253,7 +314,6 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
       eh: p1.eHours + p2.eHours,
       rp: p1.rPay + p2.rPay,
       ep: p1.ePay + p2.ePay,
-
       h100: p1.h100 + p2.h100,
       h125e: p1.h125e + p2.h125e,
       h150e: p1.h150e + p2.h150e,
