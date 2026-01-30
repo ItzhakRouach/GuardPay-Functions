@@ -28,16 +28,19 @@ export default async ({ req, res, log, error }) => {
   }
 
   // 3. Destructure Action and Payload
-  const { action, payload, userId } = body;
+  const { action, payload } = body;
   // Note: userId is top level in your delete example, but usually payload is better.
   // I checked both to be safe.
 
   try {
     switch (action) {
       case "DELETE_ACCOUNT": {
-        const targetUserId = userId || payload?.userId;
+        const targetUserId = req.headers["x-appwrite-user-id"];
         if (!targetUserId) {
-          return res.json({ error: "User ID is required for deletion" }, 400);
+          return res.json(
+            { error: "Unauthorized. You must be logged in." },
+            401,
+          );
         }
 
         log(`Starting deletion for user: ${targetUserId}`);
