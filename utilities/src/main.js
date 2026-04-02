@@ -120,6 +120,9 @@ export default async ({ req, res, log, error }) => {
             h175_extra_hours: 0,
             h200_extra_hours: 0,
             h150_shabat: 0,
+            h150_holiday: 0,
+            h175_holiday: 0,
+            h200_holiday: 0,
             base_rate: baseRate,
             is_training: type === "training",
             is_vacation: type === "vacation",
@@ -360,13 +363,14 @@ const calculateShiftPay = (
     extra_pay_amount: Number(res.ep.toFixed(2)),
     travel_pay_amount: Number(travel.toFixed(2)),
     h100_hours: Number(res.h100.toFixed(2)),
+
     h125_extra_hours: Number(res.h125e.toFixed(2)),
     h150_extra_hours: Number(res.h150e.toFixed(2)),
 
-    // פיצול שבת וחג לתצוגה
+    h175_extra_hours: isHoliday ? 0 : Number(res.h175s.toFixed(2)),
+    h200_extra_hours: isHoliday ? 0 : Number(res.h200s.toFixed(2)),
+
     h150_shabat: isHoliday ? 0 : Number(res.h150s.toFixed(2)),
-    h175_shabat: isHoliday ? 0 : Number(res.h175s.toFixed(2)),
-    h200_shabat: isHoliday ? 0 : Number(res.h200s.toFixed(2)),
 
     h150_holiday: isHoliday ? Number(res.h150s.toFixed(2)) : 0,
     h175_holiday: isHoliday ? Number(res.h175s.toFixed(2)) : 0,
