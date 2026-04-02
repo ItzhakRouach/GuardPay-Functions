@@ -329,27 +329,29 @@ const calculateShiftPay = (
       h125e: p1.h125e + p2.h125e,
       h150e: p1.h150e + p2.h150e,
       h150s: p1.h150s + p2.h150s,
-      h175s: p1.h175s + p2.h175s,
-      h200s: p1.h200s + p2.h200s,
+      h175s: p1.h175s + p2.h175s, // נוסף כדי למנוע NaN
+      h200s: p1.h200s + p2.h200s, // נוסף כדי למנוע NaN
     };
   } else {
-    const r = calculateHours(start, end);
+    res = calculateHours(start, end);
+    // התאמת שמות המשתנים למבנה האחיד
     res = {
-      p: r.rPay + r.ePay,
-      rh: r.rHours,
-      eh: r.eHours,
-      rp: r.rPay,
-      ep: r.ePay,
-      h100: r.h100,
-      h125e: r.h125e,
-      h150e: r.h150e,
-      h150s: r.h150s,
-      h175s: r.h175s,
-      h200s: r.h200s,
+      p: res.rPay + res.ePay,
+      rh: res.rHours,
+      eh: res.eHours,
+      rp: res.rPay,
+      ep: res.ePay,
+      h100: res.h100,
+      h125e: res.h125e,
+      h150e: res.h150e,
+      h150s: res.h150s,
+      h175s: res.h175s,
+      h200s: res.h200s,
     };
   }
 
   const travel = Number(travelRate || 0);
+
   return {
     total_amount: Number((res.p + travel).toFixed(2)),
     reg_hours: Number(res.rh.toFixed(2)),
@@ -360,8 +362,14 @@ const calculateShiftPay = (
     h100_hours: Number(res.h100.toFixed(2)),
     h125_extra_hours: Number(res.h125e.toFixed(2)),
     h150_extra_hours: Number(res.h150e.toFixed(2)),
-    h175_extra_hours: Number(res.h175s.toFixed(2)),
-    h200_extra_hours: Number(res.h200s.toFixed(2)),
-    h150_shabat: Number(res.h150s.toFixed(2)),
+
+    // פיצול שבת וחג לתצוגה
+    h150_shabat: isHoliday ? 0 : Number(res.h150s.toFixed(2)),
+    h175_shabat: isHoliday ? 0 : Number(res.h175s.toFixed(2)),
+    h200_shabat: isHoliday ? 0 : Number(res.h200s.toFixed(2)),
+
+    h150_holiday: isHoliday ? Number(res.h150s.toFixed(2)) : 0,
+    h175_holiday: isHoliday ? Number(res.h175s.toFixed(2)) : 0,
+    h200_holiday: isHoliday ? Number(res.h200s.toFixed(2)) : 0,
   };
 };
