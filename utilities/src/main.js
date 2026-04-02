@@ -13,37 +13,22 @@ export default async ({ req, res, log, error }) => {
   const databases = new Databases(client);
   const users = new Users(client);
 
-  // 2. Parse Request Body
-  if (!req.body) {
-    error("Request body is missing!");
-    return res.json({ error: "No Data Provided" }, 400);
-  }
+  if (!req.body) return res.json({ error: "No Data Provided" }, 400);
 
   let body;
   try {
     body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
   } catch (e) {
-    error("JSON Parse Error: " + e.message);
     return res.json({ error: "Invalid JSON format" }, 400);
   }
 
-  // 3. Destructure Action and Payload
   const { action, payload } = body;
-  // Note: userId is top level in your delete example, but usually payload is better.
-  // I checked both to be safe.
 
   try {
     switch (action) {
       case "DELETE_ACCOUNT": {
         const targetUserId = req.headers["x-appwrite-user-id"];
-        if (!targetUserId) {
-          return res.json(
-            { error: "Unauthorized. You must be logged in." },
-            401,
-          );
-        }
-
-        log(`Starting deletion for user: ${targetUserId}`);
+        if (!targetUserId) return res.json({ error: "Unauthorized" }, 401);
 
         const [userPref, userShifts] = await Promise.all([
           databases.listDocuments("695835c0002144f7a605", "users_prefs", [
@@ -72,10 +57,7 @@ export default async ({ req, res, log, error }) => {
         ];
 
         await Promise.all(deleteTasks);
-        log("Documents deleted successfully.");
-
         await users.delete(targetUserId);
-        log("User account deleted successfully.");
         return res.json({ message: "All data deleted successfully" });
       }
 
@@ -84,9 +66,19 @@ export default async ({ req, res, log, error }) => {
           regularPay,
           extraPay,
           travelPay,
-          training_pay = 0,
-          vacation_pay = 0,
+          training_pay,
+          vacation_pay,
+          user_id,
         } = payload;
+
+        // שליפת נתוני יישוב ונקודות זיכוי מהפרופיל
+        const profileRes = await databases.listDocuments(
+          "695835c0002144f7a605",
+          "users_prefs",
+          [Query.equal("user_id", user_id), Query.limit(1)],
+        );
+
+        const profile = profileRes.documents[0] || {};
 
         const result = calculateSalary(
           regularPay,
@@ -94,19 +86,26 @@ export default async ({ req, res, log, error }) => {
           travelPay,
           training_pay,
           vacation_pay,
+          profile.credit_points || 2.25,
+          profile.settlement_percent || 0,
+          profile.settlement_annual_cap || 0,
         );
-        log("Salary calculated successfully");
+
         return res.json(result);
       }
 
       case "CALCULATE_SHIFT": {
-        const { startTime, endTime, baseRate, travelRate, type, user_id } =
-          payload;
-
-        log(`Calculating shift for user: ${user_id || "anonymous"}`);
+        const {
+          startTime,
+          endTime,
+          baseRate,
+          travelRate,
+          type,
+          user_id,
+          isHoliday,
+        } = payload;
 
         let result;
-
         if (type === "training" || type === "vacation") {
           result = {
             total_amount: Number(baseRate * 8),
@@ -128,14 +127,20 @@ export default async ({ req, res, log, error }) => {
             end_time: endTime,
           };
         } else {
-          result = calculateShiftPay(startTime, endTime, baseRate, travelRate);
+          result = calculateShiftPay(
+            startTime,
+            endTime,
+            baseRate,
+            travelRate,
+            isHoliday,
+          );
           result.is_training = false;
           result.is_vacation = false;
           result.start_time = startTime;
           result.end_time = endTime;
           result.base_rate = Number(baseRate);
+          result.is_holiday = !!isHoliday;
         }
-        log("Shift calculated successfully");
         return res.json(result);
       }
 
@@ -143,7 +148,7 @@ export default async ({ req, res, log, error }) => {
         return res.json({ error: "Invalid Action" }, 400);
     }
   } catch (err) {
-    error("Error happened: " + err.message);
+    error("Error: " + err.message);
     return res.json(
       { error: "Internal Server Error", details: err.message },
       500,
@@ -151,98 +156,97 @@ export default async ({ req, res, log, error }) => {
   }
 };
 
-// --- Helper Functions ---
+// --- Helper Functions 2026 ---
 
 const calculateSalary = (
-  regularPay = 0,
-  extraPay = 0,
-  travelPay = 0,
-  training_pay = 0,
-  vacation_pay = 0,
+  reg = 0,
+  extra = 0,
+  travel = 0,
+  training = 0,
+  vacation = 0,
+  points = 2.25,
+  sPercent = 0,
+  sAnnualCap = 0,
 ) => {
-  const reg = Number(regularPay);
-  const extra = Number(extraPay);
-  const travel = Number(travelPay);
-  const training = Number(training_pay);
-  const vacation = Number(vacation_pay);
-
-  const bruto = reg + extra + travel + training + vacation;
-
-  const pensia = reg * 0.07 + extra * 0.07 + travel * 0.05;
+  const bruto =
+    Number(reg) +
+    Number(extra) +
+    Number(travel) +
+    Number(training) +
+    Number(vacation);
+  const pensia =
+    Number(reg) * 0.07 + Number(extra) * 0.07 + Number(travel) * 0.05;
 
   const thresholdBL = 7522;
-  let bituahLeumiAndHealth = 0;
+  const bituahLeumiAndHealth =
+    bruto <= thresholdBL
+      ? bruto * 0.035
+      : thresholdBL * 0.035 + (bruto - thresholdBL) * 0.12;
 
-  if (bruto <= thresholdBL) {
-    bituahLeumiAndHealth = bruto * 0.035;
-  } else {
-    bituahLeumiAndHealth = thresholdBL * 0.035 + (bruto - thresholdBL) * 0.12;
-  }
-
+  // מדרגות מס הכנסה 2026
   let grossTax = 0;
-  if (bruto <= 7010) {
-    grossTax = bruto * 0.1;
-  } else if (bruto <= 10060) {
-    grossTax = 710 + (bruto - 7010) * 0.14;
-  } else if (bruto <= 16150) {
-    grossTax = 710 + 427 + (bruto - 10060) * 0.2;
-  } else {
-    grossTax = 710 + 427 + 1218 + (bruto - 16150) * 0.31;
+  if (bruto <= 7010) grossTax = bruto * 0.1;
+  else if (bruto <= 10060) grossTax = 701 + (bruto - 7010) * 0.14;
+  else if (bruto <= 16150) grossTax = 701 + 427 + (bruto - 10060) * 0.2;
+  else if (bruto <= 22440) grossTax = 701 + 427 + 1218 + (bruto - 16150) * 0.31;
+  else grossTax = 701 + 427 + 1218 + 1950 + (bruto - 22440) * 0.35;
+
+  const creditValue = points * 242; // שווי נקודה 2026
+
+  // חישוב הטבת יישוב (מה-PDF של 2026)
+  let settlementBenefit = 0;
+  if (sPercent > 0 && sAnnualCap > 0) {
+    const monthlyCap = sAnnualCap / 12;
+    settlementBenefit = Math.min(bruto, monthlyCap) * (sPercent / 100);
   }
 
-  const points = 2.25;
-  const creditValue = points * 242;
-  const finalIncomeTax = Math.max(0, grossTax - creditValue);
-
+  const finalIncomeTax = Math.max(
+    0,
+    grossTax - creditValue - settlementBenefit,
+  );
   const totalDeductions = pensia + bituahLeumiAndHealth + finalIncomeTax;
-  const neto = bruto - totalDeductions;
 
   return {
-    bruto,
-    pensia,
-    bituahLeumiAndHealth,
-    incomeTax: finalIncomeTax,
-    neto,
-    totalDeductions,
+    bruto: Number(bruto.toFixed(2)),
+    pensia: Number(pensia.toFixed(2)),
+    bituahLeumiAndHealth: Number(bituahLeumiAndHealth.toFixed(2)),
+    incomeTax: Number(finalIncomeTax.toFixed(2)),
+    settlementBenefit: Number(settlementBenefit.toFixed(2)),
+    neto: Number((bruto - totalDeductions).toFixed(2)),
+    totalDeductions: Number(totalDeductions.toFixed(2)),
   };
 };
 
-const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
+const calculateShiftPay = (
+  startTime,
+  endTime,
+  baseRate,
+  travelRate,
+  isHoliday,
+) => {
   const start = new Date(startTime);
   let end = new Date(endTime);
   if (end < start) end.setDate(end.getDate() + 1);
-
   const base = Number(baseRate);
 
-  const isNightShift = () => {
+  const checkNightShift = () => {
     let nightHours = 0;
     let current = new Date(start);
     while (current < end) {
-      const hour = current.getHours();
-      if (hour >= 22 || hour < 6) nightHours += 0.25;
+      if (current.getHours() >= 22 || current.getHours() < 6)
+        nightHours += 0.25;
       current.setMinutes(current.getMinutes() + 15);
     }
     return nightHours >= 2;
   };
 
-  const regLimit = isNightShift() ? 7 : 8;
-
-  const getSundayCutoff = (d) => {
-    const cutoff = new Date(d);
-    const day = cutoff.getDay();
-    const diff = cutoff.getDate() - day + (day === 0 ? 0 : 7);
-    cutoff.setDate(diff);
-    cutoff.setHours(4, 0, 0, 0);
-    return cutoff;
-  };
-  const sundayCutoff = getSundayCutoff(start);
+  const regLimit = checkNightShift() ? 7 : 8;
 
   const calculateHours = (segStart, segEnd, forceWeekday = false) => {
     let rPay = 0,
       ePay = 0,
       rHours = 0,
       eHours = 0;
-
     let h100 = 0,
       h125e = 0,
       h150e = 0,
@@ -250,47 +254,47 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
       h175s = 0,
       h200s = 0;
 
-    const duration = (segEnd - segStart) / (1000 * 60 * 60);
-    const globalStartHour = (segStart - start) / (1000 * 60 * 60);
+    const duration = (segEnd - segStart) / 3600000;
+    const globalOffset = (segStart - start) / 3600000;
 
     for (let i = 0; i < duration; i += 0.25) {
-      const currentHour = globalStartHour + i;
-      const step = 0.25;
-      const blockTime = new Date(segStart.getTime() + i * 60 * 60 * 1000);
+      const currentH = globalOffset + i;
+      const blockTime = new Date(segStart.getTime() + i * 3600000);
 
-      const isWeekendBlock =
+      const isWeekendOrHoliday =
         !forceWeekday &&
-        ((blockTime.getDay() === 5 && blockTime.getHours() >= 16) ||
+        (isHoliday ||
+          (blockTime.getDay() === 5 && blockTime.getHours() >= 16) ||
           blockTime.getDay() === 6 ||
           (blockTime.getDay() === 0 && blockTime.getHours() < 4));
 
-      if (currentHour < regLimit) {
-        if (isWeekendBlock) {
-          h150s += step;
-          rPay += step * (base * 1.5);
+      if (currentH < regLimit) {
+        if (isWeekendOrHoliday) {
+          h150s += 0.25;
+          rPay += 0.25 * base * 1.5;
         } else {
-          h100 += step;
-          rPay += step * base;
+          h100 += 0.25;
+          rPay += 0.25 * base;
         }
-        rHours += step;
-      } else if (currentHour < regLimit + 2) {
-        if (isWeekendBlock) {
-          h175s += step;
-          ePay += step * (base * 1.75);
+        rHours += 0.25;
+      } else if (currentH < regLimit + 2) {
+        if (isWeekendOrHoliday) {
+          h175s += 0.25;
+          ePay += 0.25 * base * 1.75;
         } else {
-          h125e += step;
-          ePay += step * (base * 1.25);
+          h125e += 0.25;
+          ePay += 0.25 * base * 1.25;
         }
-        eHours += step;
+        eHours += 0.25;
       } else {
-        if (isWeekendBlock) {
-          h200s += step;
-          ePay += step * (base * 2.0);
+        if (isWeekendOrHoliday) {
+          h200s += 0.25;
+          ePay += 0.25 * base * 2;
         } else {
-          h150e += step;
-          ePay += step * (base * 1.5);
+          h150e += 0.25;
+          ePay += 0.25 * base * 1.5;
         }
-        eHours += step;
+        eHours += 0.25;
       }
     }
     return {
@@ -306,6 +310,10 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
       h200s,
     };
   };
+
+  const sundayCutoff = new Date(start);
+  sundayCutoff.setDate(sundayCutoff.getDate() - sundayCutoff.getDay() + 7);
+  sundayCutoff.setHours(4, 0, 0, 0);
 
   let res;
   if (start < sundayCutoff && end > sundayCutoff) {
@@ -342,7 +350,6 @@ const calculateShiftPay = (startTime, endTime, baseRate, travelRate) => {
   }
 
   const travel = Number(travelRate || 0);
-
   return {
     total_amount: Number((res.p + travel).toFixed(2)),
     reg_hours: Number(res.rh.toFixed(2)),
