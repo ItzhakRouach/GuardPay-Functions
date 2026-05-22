@@ -68,6 +68,7 @@ export default async ({ req, res, log, error }) => {
           travelPay,
           training_pay,
           vacation_pay,
+          sick_pay,
           user_id,
         } = payload;
 
@@ -89,6 +90,7 @@ export default async ({ req, res, log, error }) => {
           profile.credit_points || 2.25,
           profile.settlement_percent || 0,
           profile.settlement_annual_cap || 0,
+          sick_pay, // ← added
         );
 
         return res.json(result);
@@ -170,15 +172,20 @@ const calculateSalary = (
   points = 2.25,
   sPercent = 0,
   sAnnualCap = 0,
+  sickPay = 0,
 ) => {
   const bruto =
     Number(reg) +
     Number(extra) +
     Number(travel) +
     Number(training) +
+    Number(sickPay) +
     Number(vacation);
   const pensia =
-    Number(reg) * 0.07 + Number(extra) * 0.07 + Number(travel) * 0.05;
+    Number(reg) * 0.07 +
+    Number(extra) * 0.07 +
+    Number(travel) * 0.05 +
+    Number(sickPay) * 0.07;
 
   const thresholdBL = 7522;
   const bituahLeumiAndHealth =
