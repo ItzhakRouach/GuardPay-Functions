@@ -1,9 +1,10 @@
 import { ID, Query } from "node-appwrite";
 
 // salaryLogic prices by LOCAL wall-clock (getHours/getDay). Identical to the
-// phone app only when this process runs in Israel time. Set defensively here;
-// the console env var TZ=Asia/Jerusalem is the primary mechanism.
-process.env.TZ ??= "Asia/Jerusalem";
+// phone app only when this process runs in Israel time. The Appwrite runtime
+// container sets TZ=UTC itself, so a soft `??=` never wins — force it
+// unconditionally at module load (runs at cold start, before any Date use).
+process.env.TZ = "Asia/Jerusalem";
 
 const DB_ID = process.env.APPWRITE_DB_ID ?? "695835c0002144f7a605";
 const SHIFTS_HISTORY = "shifts_history";
