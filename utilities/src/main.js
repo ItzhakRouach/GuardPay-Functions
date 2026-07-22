@@ -1,4 +1,7 @@
 import { Client, Databases, Query, Users } from "node-appwrite";
+import { mishmeretAuthorized } from "./auth-guard.js";
+import { findAccount } from "./find-account.js";
+import { importWeek } from "./import-week.js";
 
 export default async ({ req, res, log, error }) => {
   // 1. Initialize Client
@@ -147,6 +150,19 @@ export default async ({ req, res, log, error }) => {
           result.is_holiday = !!isHoliday;
         }
         return res.json(result);
+      }
+
+      // ── מִשְׁמֶרֶת (AutoShiftSchedule) integration — server-to-server only ──
+      case "FIND_ACCOUNT":
+      case "IMPORT_WEEK": {
+        if (!mishmeretAuthorized(req, payload)) {
+          return res.json({ ok: false, code: "UNAUTHORIZED" }, 401);
+        }
+        const out =
+          action === "FIND_ACCOUNT"
+            ? await findAccount({ users, databases }, payload)
+            : await importWeek({ databases, calculateShiftPay }, payload);
+        return res.json(out.body, out.status);
       }
 
       default:
