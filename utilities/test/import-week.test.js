@@ -27,6 +27,15 @@ function mockDb({ prefs = [{ price_per_hour: 45, price_per_ride: 20 }], existing
   return { db, calls };
 }
 
+// Mock database that throws on any method call—used to verify early returns before DB access.
+function throwingDb() {
+  return {
+    listDocuments: async () => { throw new Error("should not call DB"); },
+    deleteDocument: async () => { throw new Error("should not call DB"); },
+    createDocument: async () => { throw new Error("should not call DB"); },
+  };
+}
+
 const VALID = {
   userId: "u1",
   importKey: "mishmeret:2026-07-19",
@@ -36,12 +45,16 @@ const VALID = {
 };
 
 test("tzGuardOk true under Asia/Jerusalem, false under UTC", () => {
-  const prev = process.env.TZ;
-  process.env.TZ = "Asia/Jerusalem";
-  assert.equal(tzGuardOk(), true);
-  process.env.TZ = "UTC";
-  assert.equal(tzGuardOk(), false);
-  process.env.TZ = prev ?? "Asia/Jerusalem";
+  try {
+    process.env.TZ = "Asia/Jerusalem";
+    assert.equal(tzGuardOk(), true);
+    process.env.TZ = "UTC";
+    assert.equal(tzGuardOk(), false);
+  } finally {
+    // Always restore to Israel time — suite and module default require it, and ambient
+    // TZ (e.g. CI env) may differ from the test entry state.
+    process.env.TZ = "Asia/Jerusalem";
+  }
 });
 
 test("validateImportPayload rejects bad shapes", () => {
@@ -61,6 +74,25 @@ test("validateImportPayload rejects bad shapes", () => {
   );
   // empty array is VALID — it means "remove this week's import"
   assert.equal(validateImportPayload({ ...VALID, shifts: [] }), null);
+});
+
+test("importWeek: invalid payload → early return 400/BAD_PAYLOAD (no DB access)", async () => {
+  const db = throwingDb();
+  const out = await importWeek({ databases: db, calculateShiftPay: fakeCalc }, { ...VALID, importKey: "week-1" });
+  assert.equal(out.status, 400);
+  assert.equal(out.body.code, "BAD_PAYLOAD");
+});
+
+test("importWeek: BAD_TZ → early return 500/BAD_TZ (no DB access)", async () => {
+  try {
+    process.env.TZ = "UTC";
+    const db = throwingDb();
+    const out = await importWeek({ databases: db, calculateShiftPay: fakeCalc }, VALID);
+    assert.equal(out.status, 500);
+    assert.equal(out.body.code, "BAD_TZ");
+  } finally {
+    process.env.TZ = "Asia/Jerusalem";
+  }
 });
 
 test("importWeek: missing prefs → NO_PREFS", async () => {
