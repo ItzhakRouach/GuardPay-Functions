@@ -102,6 +102,14 @@ test("importWeek: missing prefs → NO_PREFS", async () => {
   assert.equal(out.body.code, "NO_PREFS");
 });
 
+test("importWeek: prefs doc missing price_per_hour → 404/NO_PREFS, nothing created", async () => {
+  const { db, calls } = mockDb({ prefs: [{ price_per_ride: 20 }] });
+  const out = await importWeek({ databases: db, calculateShiftPay: fakeCalc }, VALID);
+  assert.equal(out.status, 404);
+  assert.equal(out.body.code, "NO_PREFS");
+  assert.equal(calls.created.length, 0);
+});
+
 test("importWeek: deletes existing tagged docs then creates new ones with tags", async () => {
   const { db, calls } = mockDb({ existing: [{ $id: "old1" }, { $id: "old2" }] });
   const out = await importWeek({ databases: db, calculateShiftPay: fakeCalc }, VALID);

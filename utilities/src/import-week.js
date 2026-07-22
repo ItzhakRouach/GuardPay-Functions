@@ -49,8 +49,13 @@ export async function importWeek({ databases, calculateShiftPay }, payload) {
   ]);
   const prefs = prefsRes.documents?.[0];
   if (!prefs) return { status: 404, body: { ok: false, code: "NO_PREFS" } };
+  // NaN here would persist into every money field of shifts_history.
   const baseRate = Number(prefs.price_per_hour);
-  const travelRate = Number(prefs.price_per_ride || 0);
+  if (!Number.isFinite(baseRate) || baseRate <= 0) {
+    return { status: 404, body: { ok: false, code: "NO_PREFS", message: "invalid price_per_hour" } };
+  }
+  const travelRateRaw = Number(prefs.price_per_ride);
+  const travelRate = Number.isFinite(travelRateRaw) ? travelRateRaw : 0;
 
   const existing = await databases.listDocuments(DB_ID, SHIFTS_HISTORY, [
     Query.equal("user_id", payload.userId),
