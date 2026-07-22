@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "main": "src/main.js",
   "type": "module",
+  "scripts": {
+    "test": "node --test test/*.js"
+  },
   "dependencies": {
     "node-appwrite": "^21.1.0"
   }
